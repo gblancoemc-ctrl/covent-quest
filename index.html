@@ -1,0 +1,320 @@
+<!doctype html>
+<!--
+  COVENT QUEST — búsqueda del tesoro con QR en Covent Garden
+  Fichero único, sin backend. Hosteable en GitHub Pages.
+
+  MECÁNICA
+  1. El anfitrión está en la plaza con un QR de salida; los equipos lo escanean.
+  2. Cada pista vale Covent Points. Se validan con el código del QR de la parada.
+  3. El cronómetro arranca al primer escaneo y para al validar el último código.
+  4. Los puntos se ganan jugando. NO se compran, no hay saldo, no hay cartera.
+
+  LIMITACIONES REALES
+  - Los códigos son públicos: cualquiera puede compartir la URL.
+  - localStorage se borra fácil; esto es una experiencia, no un anti-trampas.
+  - Sin backend no hay cupo ni validación de pago. El cobro se hace en efectivo
+    en el punto de salida.
+  - Las fotos para TikTok son OPCIONALES en este juego. Si se hacen obligatorias
+    sin consentimiento, hay problema de derechos de imagen.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Covent Quest — Covent Garden</title>
+<style>
+:root{--navy:#0e2233;--teal:#0f7a72;--paper:#f7f5f0;--ink:#1b2833;--muted:#5a6b78;--line:#d9d4ca;--amber:#c8842a;--rose:#a83c5b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:22px 20px 60px}
+header{background:var(--navy);color:#eaf0f4;padding:14px 0;position:sticky;top:0;z-index:5}
+header .wrap{padding:0 20px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.mark{font-weight:700;letter-spacing:.06em;font-size:14px}
+.mark i{display:inline-block;width:9px;height:9px;background:var(--teal);border-radius:2px;margin-right:8px}
+.hud{display:flex;gap:14px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#9fb3c0}
+.hud b{display:block;font-size:15px;color:#fff;letter-spacing:0;text-transform:none}
+h1{font-size:27px;line-height:1.15;margin:20px 0 6px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 18px;font-size:15px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:17px;margin:16px 0}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 10px;font-weight:700}
+#hint{font-size:17px;line-height:1.5}
+#hint strong{display:block;font-size:19px;margin-bottom:4px}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:#e6f2f0;color:#0b5c56;margin-bottom:8px}
+.pill.win{background:#fbf1e2;color:#7a4d12}
+.pill.stop{background:#fdecea;color:#8a2a20}
+input,button{font:inherit}
+input{width:100%;padding:13px 14px;border:1px solid #c9c3b8;border-radius:8px;background:#fff;text-transform:uppercase;letter-spacing:.1em;text-align:center}
+button{width:100%;margin-top:9px;padding:14px 18px;border:0;border-radius:8px;background:var(--teal);color:#fff;font-weight:700;letter-spacing:.02em}
+button.ghost{background:transparent;color:var(--navy);border:1px solid #c2c9cf;font-weight:600}
+button:active{transform:translateY(1px)}
+.stops{list-style:none;padding:0;margin:0}
+.stops li{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.stops li:last-child{border-bottom:0}
+.stops .n{flex:0 0 22px;height:22px;border-radius:50%;background:#eceff1;color:#5b6b78;display:grid;place-items:center;font-size:11px;font-weight:700}
+.stops li.on .n{background:var(--teal);color:#fff}
+.stops .t{color:var(--muted);font-size:12px}
+.stops .pts{margin-left:auto;font-weight:700;color:var(--amber);font-size:12px;white-space:nowrap}
+.map{width:100%;height:230px;border:0;border-radius:8px}
+code.prize{display:block;font-family:ui-monospace,Menlo,monospace;font-size:19px;letter-spacing:.12em;background:#fbf1e2;border:1px dashed var(--amber);border-radius:8px;padding:14px;text-align:center;color:#7a4d12}
+.msg{padding:11px 13px;border-radius:8px;font-size:14px;margin:11px 0}
+.msg.err{background:#fdecea;color:#8a2a20}
+.msg.ok{background:#e6f2f0;color:#0b5c56}
+.rules{font-size:13px;color:#425563}
+.rules b{color:#7a4d12}
+.rules li{margin-bottom:7px}
+footer{margin-top:30px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+a{color:var(--teal)}
+.note{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="mark"><i></i> COVENT QUEST</div>
+    <div class="hud">
+      <div>Points<b id="pts">0</b></div>
+      <div>Time<b id="clock">—</b></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <h1>Five codes. Two hours. One winner.</h1>
+  <p class="sub">Covent Garden · teams of 3 · self-guided with a QR at each stop</p>
+
+  <div class="card" id="startCard">
+    <h2>Before you start</h2>
+    <p style="margin:0 0 12px">Your clock starts when your team validates the first code. It stops at the fifth. Points are for clues solved, not for speed — a tie is broken by time.</p>
+    <button onclick="startTeam()">We are ready</button>
+  </div>
+
+  <div class="card">
+    <h2>Your clue</h2>
+    <div id="hint">Find the host at the starting point and scan the code.</div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="card" id="entryCard">
+    <h2>Enter a code</h2>
+    <input id="code" placeholder="ABC123" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button onclick="check()">Check code</button>
+  </div>
+
+  <div class="card">
+    <h2>Route</h2>
+    <ul class="stops" id="stops"></ul>
+    <p class="note">About 1 km in total, roughly 12 minutes of walking between stops. The time is in the puzzles, not the distance.</p>
+  </div>
+
+  <div class="card">
+    <h2>Map</h2>
+    <iframe class="map" loading="lazy" src="https://www.openstreetmap.org/export/embed.html?bbox=-0.1315%2C51.5082%2C-0.1205%2C51.5162&layer=mapnik&marker=51.5130%2C-0.1253"></iframe>
+    <p class="note">Map not loading? <a href="https://www.openstreetmap.org/#map=17/51.5126/-0.1254" target="_blank" rel="noopener">Open the area in OpenStreetMap</a>.</p>
+  </div>
+
+  <div class="card rules">
+    <h2>The rules, plainly</h2>
+    <ul style="margin:0;padding-left:18px">
+      <li><b>Walk, do not run.</b> This is a race against the clock, not through traffic. Covent Garden is full of people and you are on foot in a tourist area. Crossing on red is a disqualification.</li>
+      <li><b>Stay on the pavement.</b> Do not block doorways, shop entrances or bus stops.</li>
+      <li><b>Every clue is in public space</b> — plaques, statues, signs. Nothing is inside a venue.</li>
+      <li><b>If you use a café's table or toilet, buy something.</b> No venue is paying for this.</li>
+      <li><b>No climbing, no touching, no trespassing.</b> Everything is reachable at eye level from the street.</li>
+      <li><b>Photos are optional.</b> If you post one, use #CoventQuest and we may repost it with credit.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Answer to one clue: one Covent Point. Points are earned by playing and cannot be bought.
+    No balance, no wallet, no transfers. <span id="build"></span>
+  </footer>
+</div>
+
+<!-- Visor WebAR. Solo se abre si hay escena configurada para esa parada. -->
+<div id="ar-modal" class="ar-overlay" hidden>
+  <div class="ar-box" role="dialog" aria-modal="true" aria-label="Avatar de la parada">
+    <button type="button" class="ar-close" id="ar-close">&times; Cerrar avatar</button>
+    <iframe id="ar-frame" title="Escena WebAR" allow="camera; microphone; accelerometer; gyroscope; xr-spatial-tracking" allowfullscreen></iframe>
+    <p class="ar-note">Si el avatar no carga, cierra esto: la pista sigue debajo.</p>
+  </div>
+</div>
+
+<style>
+.ar-overlay{position:fixed;inset:0;background:rgba(14,34,51,.92);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px}
+.ar-overlay[hidden]{display:none}
+.ar-box{position:relative;width:100%;max-width:500px;height:82vh;background:#000;border-radius:12px;overflow:hidden}
+.ar-close{position:absolute;top:10px;right:10px;z-index:2;background:var(--rose);color:#fff;border:0;padding:9px 15px;border-radius:20px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+#ar-frame{width:100%;height:100%;border:0;display:block}
+.ar-note{position:absolute;left:0;right:0;bottom:0;margin:0;padding:9px 12px;background:rgba(0,0,0,.72);color:#cfd8de;font-size:12px;text-align:center}
+</style>
+
+<script>
+// ---------------------------------------------------------------------------
+// RUTA — editar aquí. Cada parada: código, nombre, sitio, pista y puntos.
+// Los códigos son de DEMO. Rotar antes de cada edición de pago.
+// ---------------------------------------------------------------------------
+const ROUTE = [
+  { code:"MAIDEN", name:"The Porterhouse", site:"21-22 Maiden Lane, WC2E 7NA",
+    lat:51.51025, lon:-0.12341, pts:1,
+    clue:"Look at the corner where Maiden Lane meets the piazza side street. Find the plaque about the theatre that stood here." },
+  { code:"MERCER", name:"Stanfords corner", site:"7 Mercer Walk, WC2H 9FA",
+    lat:51.51301, lon:-0.12535, pts:2,
+    clue:"A shop that sells places. On the corner, count the countries on the window map that start with the same letter as this street." },
+  { code:"SEVEN", name:"Seven Dials", site:"Earlham Street, WC2H 9LX",
+    lat:51.51403, lon:-0.12605, pts:2,
+    clue:"Seven streets meet at one point, under a sundial column. Read the inscription at the base and tell us the year." },
+  { code:"MONMOUTH", name:"Monmouth Street", site:"Monmouth Street, WC2H 9EW",
+    lat:51.51394, lon:-0.12685, pts:2,
+    clue:"Monmouth was a person before it was a street. Find the old shopfront that still has its original lettering above the door." },
+  { code:"ROSE", name:"Rose Street", site:"33 Rose Street, WC2E 9EB",
+    lat:51.51172, lon:-0.12566, pts:3,
+    clue:"The last one. A pub older than the street sign, with a lantern outside. The code is under the left-hand lantern." },
+];
+
+const PRIZE_CODE = "CQ-FINISH-2026";
+const KEY = "coventquest.v1";
+
+// ---------------------------------------------------------------------------
+// AVATAR WebAR (Kivicube) — OPCIONAL.
+// Pega aquí el enlace de experiencia que genera Kivicube Studio para cada
+// escena. Vacío = esa parada no abre avatar y el juego sigue igual.
+// Las claves son los MISMOS códigos de ROUTE, no los nombres de fichero QR.
+// ---------------------------------------------------------------------------
+const KIVICUBE = {
+  MAIDEN:   "",
+  MERCER:   "",
+  SEVEN:    "",
+  MONMOUTH: "",
+  ROSE:     "",
+};
+
+function openAvatar(code){
+  const url = KIVICUBE[code];
+  const modal = document.getElementById("ar-modal");
+  const frame = document.getElementById("ar-frame");
+  if (!modal || !frame) return false;
+
+  if (!url) {
+    console.info("[avatar] sin escena configurada para " + code);
+    return false;
+  }
+  frame.src = url;
+  modal.hidden = false;
+  document.body.style.overflow = "hidden";
+  return true;
+}
+
+function closeAvatar(){
+  const modal = document.getElementById("ar-modal");
+  const frame = document.getElementById("ar-frame");
+  if (!modal || !frame) return;
+  frame.src = "";              // corta cámara y libera el motor
+  modal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+document.getElementById("ar-close").addEventListener("click", closeAvatar);
+document.getElementById("ar-modal").addEventListener("click", function(e){
+  if (e.target === this) closeAvatar();
+});
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape") closeAvatar();
+});
+
+
+function now(){ return Date.now(); }
+function fmt(ms){
+  if (!ms || ms < 0) return "—";
+  const s = Math.floor(ms/1000);
+  return String(Math.floor(s/60)).padStart(2,"0") + ":" + String(s%60).padStart(2,"0");
+}
+function state(){ try { return JSON.parse(localStorage.getItem(KEY)) || {i:0,t0:null,t1:null}; } catch(e){ return {i:0,t0:null,t1:null}; } }
+function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
+function points(s){ return ROUTE.slice(0, Math.min(s.i, ROUTE.length)).reduce(function(a,st){ return a + st.pts; }, 0); }
+
+function startTeam(){
+  const s = state();
+  s.t0 = s.t0 || now();
+  save(s);
+  document.getElementById("startCard").style.display = "none";
+  render();
+}
+
+function render(){
+  const s = state();
+  const i = Math.min(s.i, ROUTE.length);
+  document.getElementById("pts").textContent = points(s);
+  document.getElementById("clock").textContent = s.t0 ? fmt((s.t1 || now()) - s.t0) : "—";
+
+  const hint = document.getElementById("hint");
+  const entry = document.getElementById("entryCard");
+  const msg = document.getElementById("msg");
+  msg.innerHTML = "";
+
+  if (i >= ROUTE.length) {
+    hint.innerHTML = '<span class="pill win">Case closed</span>' +
+      "<strong>" + points(s) + " Covent Points</strong>" +
+      "Time: " + fmt(s.t1 - s.t0) + ". Keep this code in case we ask for it.<br>" +
+      '<code class="prize">' + PRIZE_CODE + "</code>";
+    entry.style.display = "none";
+  } else {
+    const st = ROUTE[i];
+    hint.innerHTML = '<span class="pill">Clue ' + (i+1) + " of " + ROUTE.length + " · " + st.pts + " pts</span>" +
+      "<strong>" + st.name + "</strong>" + st.clue;
+    entry.style.display = "block";
+  }
+
+  document.getElementById("stops").innerHTML = ROUTE.map(function(st, k){
+    const cls = k < i ? "on" : "";
+    const t = k < i ? "solved" : (k === i ? "next" : "locked");
+    return '<li class="' + cls + '"><span class="n">' + (k+1) + "</span>" +
+      "<span><strong>" + st.name + "</strong><br><span class=\"t\">" + st.site + " · " + t + "</span></span>" +
+      '<span class="pts">+' + st.pts + "</span></li>";
+  }).join("");
+}
+
+function check(){
+  const raw = (document.getElementById("code").value || "").trim().toUpperCase();
+  const msg = document.getElementById("msg");
+  const s = state();
+  const i = Math.min(s.i, ROUTE.length);
+  if (i >= ROUTE.length) return;
+
+  if (raw === ROUTE[i].code) {
+    s.i = i + 1;
+    if (!s.t0) s.t0 = now();
+    if (s.i >= ROUTE.length) s.t1 = now();
+    save(s);
+    document.getElementById("code").value = "";
+    render();
+    msg.className = "msg ok";
+    msg.textContent = "Correct. +" + ROUTE[i].pts + " points.";
+    openAvatar(ROUTE[i].code);
+  } else {
+    const anywhere = ROUTE.findIndex(function(st){ return st.code === raw; });
+    msg.className = "msg err";
+    if (anywhere === -1) msg.textContent = "Not a code from this quest.";
+    else if (anywhere > i) msg.textContent = "That is a later clue. You are on clue " + (i+1) + ".";
+    else msg.textContent = "Already used.";
+  }
+}
+
+setInterval(function(){
+  const s = state();
+  if (s.t0 && !s.t1) document.getElementById("clock").textContent = fmt(now() - s.t0);
+}, 1000);
+
+(function(){
+  const p = new URLSearchParams(location.search);
+  const c = (p.get("c") || "").toUpperCase();
+  if (c) { document.getElementById("code").value = c; check(); }
+  const s = state();
+  if (s.t0) document.getElementById("startCard").style.display = "none";
+  document.getElementById("build").textContent = "· build " + new Date().toISOString().slice(0,10);
+  render();
+})();
+</script>
+</body>
+</html>
