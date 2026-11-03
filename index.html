@@ -44,14 +44,14 @@ h1{font-size:27px;line-height:1.15;margin:20px 0 6px;letter-spacing:-.01em}
 .pill.stop{background:#fdecea;color:#8a2a20}
 input,button{font:inherit}
 input{width:100%;padding:13px 14px;border:1px solid #c9c3b8;border-radius:8px;background:#fff;text-transform:uppercase;letter-spacing:.1em;text-align:center}
-button{width:100%;margin-top:9px;padding:14px 18px;border:0;border-radius:8px;background:var(--teal);color:#fff;font-weight:700;letter-spacing:.02em}
+button{width:100%;margin-top:9px;padding:14px 18px;border:0;border-radius:8px;background:var(--teal);color:var(--on-accent,#fff);font-weight:700;letter-spacing:.02em}
 button.ghost{background:transparent;color:var(--navy);border:1px solid #c2c9cf;font-weight:600}
 button:active{transform:translateY(1px)}
 .stops{list-style:none;padding:0;margin:0}
 .stops li{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);font-size:14px}
 .stops li:last-child{border-bottom:0}
 .stops .n{flex:0 0 22px;height:22px;border-radius:50%;background:#eceff1;color:#5b6b78;display:grid;place-items:center;font-size:11px;font-weight:700}
-.stops li.on .n{background:var(--teal);color:#fff}
+.stops li.on .n{background:var(--teal);color:var(--on-accent,#fff)}
 .stops .t{color:var(--muted);font-size:12px}
 .stops .pts{margin-left:auto;font-weight:700;color:var(--amber);font-size:12px;white-space:nowrap}
 .map{width:100%;height:230px;border:0;border-radius:8px}
@@ -234,8 +234,30 @@ const KEY = "coventquest.v1";
   }
 
   const raiz = document.documentElement;
-  raiz.style.setProperty("--navy", hex(p.get("navy"), getComputedStyle(raiz).getPropertyValue("--navy").trim() || "#0e2233"));
-  raiz.style.setProperty("--teal", hex(p.get("accent"), getComputedStyle(raiz).getPropertyValue("--teal").trim() || "#0f7a72"));
+  const navy = hex(p.get("navy"), getComputedStyle(raiz).getPropertyValue("--navy").trim() || "#0e2233");
+  const accent = hex(p.get("accent"), getComputedStyle(raiz).getPropertyValue("--teal").trim() || "#0f7a72");
+  raiz.style.setProperty("--navy", navy);
+  raiz.style.setProperty("--teal", accent);
+
+  // Contraste: si el acento del cliente es claro, el texto va en oscuro.
+  // Sin esto, un amarillo de marca deja el boton ilegible (2.09:1 medido).
+  const lum = (h) => {
+    let x = h.replace("#", "");
+    if (x.length === 3) x = x.split("").map(c => c + c).join("");
+    const ch = [0, 2, 4].map(i => parseInt(x.slice(i, i + 2), 16) / 255)
+      .map(c => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  const contraste = (a, b) => {
+    const la = lum(a), lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const claros = ["#ffffff", navy];
+  const mejor = claros.map(c => [c, contraste(c, accent)]).sort((x, y) => y[1] - x[1])[0];
+  if (mejor[1] < 4.5) {
+    console.warn("[brand] el acento da contraste " + mejor[1].toFixed(2) + ":1; se usa " + mejor[0]);
+  }
+  raiz.style.setProperty("--on-accent", mejor[0]);
 
   // codigo final por cliente
   const cod = (p.get("code") || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 40);
