@@ -71,7 +71,7 @@ a{color:var(--teal)}
 
 <header>
   <div class="wrap">
-    <div class="mark"><i></i> COVENT QUEST</div>
+    <div class="mark" id="brand"><i></i> <span id="brand-name">COVENT QUEST</span></div>
     <div class="hud">
       <div>Points<b id="pts">0</b></div>
       <div>Time<b id="clock">—</b></div>
@@ -177,6 +177,81 @@ const PRIZE_CODE = "CQ-FINISH-2026";
 const KEY = "coventquest.v1";
 
 // ---------------------------------------------------------------------------
+// WHITE-LABEL (B2B) — todo por URL, sin backend.
+//
+//   ?client=TechCorp        nombre que aparece arriba
+//   &logo=https://.../x.png logo en lugar del nombre (opcional)
+//   &navy=0b2a4a            color de la cabecera (hex sin #)
+//   &accent= d97706         color del cuadradito y de los acentos
+//   &code=CQ-TECHCORP-2026  codigo final distinto por cliente
+//   &route=nombre            guarda progreso aparte por cliente
+//
+// Reglas que respeta:
+//   - Solo hex de 3 o 6 digitos. Cualquier otra cosa cae al valor por defecto.
+//   - Nada de innerHTML con datos de la URL: un logo es una URL, no HTML.
+//   - El logo solo se acepta por https.
+//   - `code` se limita a A-Z 0-9 y guiones, 4-40 caracteres.
+//   - Un cambio de cliente NO hereda el progreso de otro (se aísla por route).
+// ---------------------------------------------------------------------------
+(function whiteLabel(){
+  const p = new URLSearchParams(location.search);
+
+  // --- entorno limpio: sin HTML, sin comillas raras
+  const limpiar = (v, max) => String(v || "").replace(/[\u0000-\u001f\u007f<>"'`]/g, "").trim().slice(0, max);
+
+  const hex = (v, porDefecto) => {
+    const s = String(v || "").replace(/^#/, "");
+    return /^[0-9a-fA-F]{3}$/.test(s) || /^[0-9a-fA-F]{6}$/.test(s) ? "#" + s : porDefecto;
+  };
+
+  const cliente = limpiar(p.get("client"), 40);
+  if (cliente) {
+    const nombre = document.getElementById("brand-name");
+    if (nombre) nombre.textContent = cliente.toUpperCase();
+    document.title = cliente + " — Covent Garden";
+  }
+
+  const logo = p.get("logo");
+  if (logo) {
+    let url = null;
+    try { url = new URL(logo); } catch (e) {}
+    if (url && url.protocol === "https:") {
+      const marca = document.getElementById("brand");
+      if (marca) {
+        const respaldo = marca.innerHTML;          // el nombre queda guardado
+        const img = document.createElement("img");
+        img.src = url.href;
+        img.alt = cliente || "logo";
+        img.referrerPolicy = "no-referrer";
+        img.style.cssText = "max-height:34px;max-width:190px;display:block";
+        img.onerror = () => { marca.innerHTML = respaldo; };  // logo roto -> vuelve el nombre
+        marca.innerHTML = "";
+        marca.appendChild(img);
+      }
+    } else {
+      console.warn("[brand] logo ignorado: solo https");
+    }
+  }
+
+  const raiz = document.documentElement;
+  raiz.style.setProperty("--navy", hex(p.get("navy"), getComputedStyle(raiz).getPropertyValue("--navy").trim() || "#0e2233"));
+  raiz.style.setProperty("--teal", hex(p.get("accent"), getComputedStyle(raiz).getPropertyValue("--teal").trim() || "#0f7a72"));
+
+  // codigo final por cliente
+  const cod = (p.get("code") || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 40);
+  if (cod.length >= 4) {
+    window.COVENT_PRIZE = cod;
+  }
+
+  // progreso aislado por cliente
+  const ruta = (p.get("route") || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24);
+  if (ruta) {
+    window.COVENT_KEY = "coventquest." + ruta;
+  }
+})();
+
+
+// ---------------------------------------------------------------------------
 // AVATAR WebAR (Kivicube) — OPCIONAL.
 // Pega aquí el enlace de experiencia que genera Kivicube Studio para cada
 // escena. Vacío = esa parada no abre avatar y el juego sigue igual.
@@ -230,8 +305,9 @@ function fmt(ms){
   const s = Math.floor(ms/1000);
   return String(Math.floor(s/60)).padStart(2,"0") + ":" + String(s%60).padStart(2,"0");
 }
-function state(){ try { return JSON.parse(localStorage.getItem(KEY)) || {i:0,t0:null,t1:null}; } catch(e){ return {i:0,t0:null,t1:null}; } }
-function save(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
+function k(){ return window.COVENT_KEY || KEY; }
+function state(){ try { return JSON.parse(localStorage.getItem(k())) || {i:0,t0:null,t1:null}; } catch(e){ return {i:0,t0:null,t1:null}; } }
+function save(s){ localStorage.setItem(k(), JSON.stringify(s)); }
 function points(s){ return ROUTE.slice(0, Math.min(s.i, ROUTE.length)).reduce(function(a,st){ return a + st.pts; }, 0); }
 
 function startTeam(){
@@ -257,7 +333,7 @@ function render(){
     hint.innerHTML = '<span class="pill win">Case closed</span>' +
       "<strong>" + points(s) + " Covent Points</strong>" +
       "Time: " + fmt(s.t1 - s.t0) + ". Keep this code in case we ask for it.<br>" +
-      '<code class="prize">' + PRIZE_CODE + "</code>";
+      '<code class="prize">' + (window.COVENT_PRIZE || PRIZE_CODE) + "</code>";
     entry.style.display = "none";
   } else {
     const st = ROUTE[i];
